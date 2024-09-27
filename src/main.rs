@@ -13,7 +13,8 @@ fn main() {
 
     env_logger::init();
 
-    let _ = peb::peb_being_debugged();
-    let _ = peb::peb_being_debugged_asm();
-    let _ = peb::peb_nt_global_flag_asm();
+    let _ = peb::WinPeb::peb_being_debugged();
+    let _ = peb::WinPeb::peb_being_debugged_asm();
+    let _ = peb::WinPeb::peb_nt_global_flag_asm();
+    let _ = peb::WinPeb::peb_process_heap_asm();
 }
