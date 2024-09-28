@@ -1,5 +1,5 @@
-use anyhow::Result;
-use log::debug;
+use anyhow::{Error, Result};
+use log::{debug, error};
 use std::{arch::asm, ptr};
 use windows::Win32::{
     Foundation::HANDLE,
@@ -213,8 +213,9 @@ impl WinPeb {
     ///
     /// # 返回值
     ///
-    /// - `true`: 进程未被调试
-    /// - `false`：进程正在被调试
+    /// - `Err`: PEB.ProcessHeap的值是null，这是不正常的
+    /// - `Ok(true)`: 进程未被调试
+    /// - `Ok(false)`：进程正在被调试
     ///
     /// # 示例
     ///
@@ -224,9 +225,15 @@ impl WinPeb {
     ///     false => println!("process is being debugged")
     /// }
     /// ```
-    pub fn peb_process_heap_asm() -> bool {
+    pub fn peb_process_heap_asm() -> Result<bool> {
         let peb_address: u64 = Self::get_peb_address();
         let peb_ref: &WinPeb = peb_address.as_ref();
+
+        if peb_ref.process_heap.is_null() {
+            error!("PEB.ProcessHeap value: Null is invalid");
+            return Err(Error::msg("PEB.ProcessHeap value: Null is invalid"));
+        }
+
         let process_ref: &WinProcessHeap = peb_ref.as_ref();
 
         debug!(
@@ -239,9 +246,9 @@ impl WinPeb {
         );
 
         if process_ref.flags > 2 || process_ref.force_flags != 0 {
-            false
+            Ok(false)
         } else {
-            true
+            Ok(true)
         }
     }
 

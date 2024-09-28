@@ -17,7 +17,10 @@ pub fn peb_nt_global_flag_asm_test() {
 
 #[test]
 pub fn peb_process_heap_asm_test() {
-    assert_eq!(WinPeb::peb_process_heap_asm(), true);
+    assert_eq!(
+        WinPeb::peb_process_heap_asm().expect("PEB.ProcessHeap value is invalid"),
+        true
+    );
 }
 
 #[test]
