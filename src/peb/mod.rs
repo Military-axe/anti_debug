@@ -230,6 +230,10 @@ impl WinPeb {
         let process_ref: &WinProcessHeap = peb_ref.as_ref();
 
         debug!(
+            "Process Heap address ==> {:#x}",
+            process_ref as *const _ as u64
+        );
+        debug!(
             "HEAP.flags ==> {:?}; HEAP.force_flags ==> {:?}",
             process_ref.flags, process_ref.force_flags
         );

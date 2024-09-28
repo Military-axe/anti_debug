@@ -22,5 +22,8 @@ pub fn peb_process_heap_asm_test() {
 
 #[test]
 pub fn peb_process_heap_test() {
-    assert_eq!(WinPeb::peb_process_heap().expect("GetProcessHeap error"), true);
+    assert_eq!(
+        WinPeb::peb_process_heap().expect("GetProcessHeap error"),
+        true
+    );
 }
