@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::{debug, error};
+use log::debug;
 use std::{arch::asm, ptr};
 use windows::Win32::{
     Foundation::HANDLE,
@@ -29,7 +29,7 @@ pub struct WinPeb {
 
 impl AsRef<WinPeb> for u64 {
     fn as_ref(&self) -> &WinPeb {
-        unsafe { &*(self as *const _ as *const WinPeb) }
+        unsafe { &*(*self as *const WinPeb) }
     }
 }
 
@@ -146,7 +146,7 @@ impl WinPeb {
     /// }
     /// ```
     pub fn peb_being_debugged() -> bool {
-        return unsafe { IsDebuggerPresent().into() };
+        return !unsafe { IsDebuggerPresent().into() };
     }
 
     /// 获取peb中指定属性的值来判断进程是否被调试
@@ -174,8 +174,8 @@ impl WinPeb {
         debug!("PEB.BeingDebugged ==> {:#x}", peb_ref.being_debugged);
 
         match peb_ref.being_debugged {
-            0 => false,
-            _ => true,
+            0 => true,
+            _ => false,
         }
     }
 
@@ -204,8 +204,8 @@ impl WinPeb {
         debug!("PEB.NtGlobalFlag ==> {:#x}", peb_ref.nt_global_flag);
 
         match peb_ref.nt_global_flag {
-            0x70 => true,
-            _ => false,
+            0x70 => false,
+            _ => true,
         }
     }
 
