@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::debug;
+use log::{debug, error};
 use std::{arch::asm, ptr};
 use windows::Win32::{
     Foundation::HANDLE,
@@ -230,10 +230,6 @@ impl WinPeb {
         let process_ref: &WinProcessHeap = peb_ref.as_ref();
 
         debug!(
-            "PEB.ProcessHeap address ==> {:#x}",
-            unsafe { &*peb_ref.process_heap } as *const _ as u64
-        );
-        debug!(
             "HEAP.flags ==> {:?}; HEAP.force_flags ==> {:?}",
             process_ref.flags, process_ref.force_flags
         );
@@ -242,6 +238,49 @@ impl WinPeb {
             false
         } else {
             true
+        }
+    }
+
+    /// 通过检测ProcessHeap中属性值来判断进程是否被调试
+    ///
+    /// 使用GetProcessHeap API获取ProcessHeap，通过判断ProcessHeap.flags的值
+    /// 是否大于2，或者ProcessHeap.force_flags地址是否不为0来判断是否被调试
+    ///
+    /// # 返回值
+    ///
+    /// - `Err`: GetProcessHeap API调用异常
+    /// - `Ok(false)`: 进程被调试
+    /// - `Ok(true)`: 进程未被调试
+    ///
+    /// # 注意事项
+    ///
+    /// 如果进程后运行起来，调试器再attach，此函数无法检测出来进程是否被调试
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// match peb_process_heap() {
+    ///     Err(error_msg) => println!("GetProcessHeap error; {:?}", error_msg),
+    ///     Ok(is_being_debug) => match is_being_debug {
+    ///         true => println!("process is not being debugged"),
+    ///         false => println!("process is being debugged"),
+    ///     }
+    /// }
+    /// ```
+    pub fn peb_process_heap() -> Result<bool> {
+        let heap_handle: HANDLE = unsafe { GetProcessHeap() }?;
+        let process_ref: &WinProcessHeap = heap_handle.as_ref();
+
+        debug!("heap handle ==> {:?}", heap_handle);
+        debug!(
+            "HEAP.flags ==> {:?}; HEAP.force_flags ==> {:?}",
+            process_ref.flags, process_ref.force_flags
+        );
+
+        if process_ref.flags > 2 || process_ref.force_flags != 0 {
+            Ok(false)
+        } else {
+            Ok(true)
         }
     }
 }
