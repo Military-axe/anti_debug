@@ -1,6 +1,10 @@
+use anyhow::Result;
 use log::debug;
 use std::{arch::asm, ptr};
-use windows::Win32::System::Diagnostics::Debug::IsDebuggerPresent;
+use windows::Win32::{
+    Foundation::HANDLE,
+    System::{Diagnostics::Debug::IsDebuggerPresent, Memory::GetProcessHeap},
+};
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -21,6 +25,12 @@ pub struct WinPeb {
     pub reverse3: [u8; 0x84],
 
     pub nt_global_flag: u32,
+}
+
+impl AsRef<WinPeb> for u64 {
+    fn as_ref(&self) -> &WinPeb {
+        unsafe { &*(self as *const _ as *const WinPeb) }
+    }
 }
 
 impl Default for WinPeb {
@@ -70,6 +80,25 @@ impl Default for WinProcessHeap {
             flags: Default::default(),
             force_flags: Default::default(),
         }
+    }
+}
+
+impl AsRef<WinProcessHeap> for u64 {
+    fn as_ref(&self) -> &WinProcessHeap {
+        unsafe { &*(self as *const _ as *const WinProcessHeap) }
+    }
+}
+
+impl AsRef<WinProcessHeap> for HANDLE {
+    fn as_ref(&self) -> &WinProcessHeap {
+        let value = self.0;
+        unsafe { &*(value as *const WinProcessHeap) }
+    }
+}
+
+impl AsRef<WinProcessHeap> for WinPeb {
+    fn as_ref(&self) -> &WinProcessHeap {
+        unsafe { &*self.process_heap }
     }
 }
 
@@ -140,8 +169,7 @@ impl WinPeb {
     /// ```
     pub fn peb_being_debugged_asm() -> bool {
         let peb_address: u64 = Self::get_peb_address();
-        let peb_raw_ptr: *const WinPeb = peb_address as *const WinPeb;
-        let peb_ref: &WinPeb = unsafe { &*peb_raw_ptr };
+        let peb_ref: &WinPeb = peb_address.as_ref();
 
         debug!("PEB.BeingDebugged ==> {:#x}", peb_ref.being_debugged);
 
@@ -171,8 +199,7 @@ impl WinPeb {
     /// ```
     pub fn peb_nt_global_flag_asm() -> bool {
         let peb_address: u64 = Self::get_peb_address();
-        let peb_raw_ptr: *const WinPeb = peb_address as *const WinPeb;
-        let peb_ref: &WinPeb = unsafe { &*peb_raw_ptr };
+        let peb_ref: &WinPeb = peb_address.as_ref();
 
         debug!("PEB.NtGlobalFlag ==> {:#x}", peb_ref.nt_global_flag);
 
@@ -199,10 +226,13 @@ impl WinPeb {
     /// ```
     pub fn peb_process_heap_asm() -> bool {
         let peb_address: u64 = Self::get_peb_address();
-        let peb_raw_ptr: *const WinPeb = peb_address as *const WinPeb;
-        let peb_ref: &WinPeb = unsafe { &*peb_raw_ptr };
-        let process_ref: &WinProcessHeap = unsafe { &*peb_ref.process_heap };
+        let peb_ref: &WinPeb = peb_address.as_ref();
+        let process_ref: &WinProcessHeap = peb_ref.as_ref();
 
+        debug!(
+            "PEB.ProcessHeap address ==> {:#x}",
+            unsafe { &*peb_ref.process_heap } as *const _ as u64
+        );
         debug!(
             "HEAP.flags ==> {:?}; HEAP.force_flags ==> {:?}",
             process_ref.flags, process_ref.force_flags
