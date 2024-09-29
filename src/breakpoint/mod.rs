@@ -1,3 +1,4 @@
+use crate::util::BeingDebug;
 use anyhow::Result;
 use log::debug;
 use windows::Win32::{
@@ -7,6 +8,16 @@ use windows::Win32::{
         Threading::GetCurrentThread,
     },
 };
+
+impl BeingDebug for CONTEXT {
+    fn is_being_debug(&self) -> bool {
+        if self.Dr0 != 0 || self.Dr1 != 0 || self.Dr2 != 0 || self.Dr3 != 0 {
+            true
+        } else {
+            false
+        }
+    }
+}
 
 /// 检测当前线程的Context，判断是否被设置硬件断点
 ///
@@ -18,7 +29,7 @@ use windows::Win32::{
 ///
 /// # 示例
 ///
-/// ```rust
+/// ```ignore
 /// if is_hardware_breakpoint_set().unwarp() {
 ///     println!("Set hardware breakpoint");
 /// } else {
@@ -35,9 +46,5 @@ pub fn is_hardware_breakpoint_set() -> Result<bool> {
         context.Dr0, context.Dr1, context.Dr2, context.Dr3
     );
 
-    if context.Dr0 != 0 || context.Dr1 != 0 || context.Dr2 != 0 || context.Dr3 != 0 {
-        Ok(true)
-    } else {
-        Ok(false)
-    }
+    Ok(context.is_being_debug())
 }

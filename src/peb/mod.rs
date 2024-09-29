@@ -1,3 +1,4 @@
+use crate::util::BeingDebug;
 use anyhow::{Error, Result};
 use log::{debug, error};
 use std::{arch::asm, ptr};
@@ -56,6 +57,16 @@ impl Default for WinPeb {
     }
 }
 
+impl BeingDebug for WinPeb {
+    fn is_being_debug(&self) -> bool {
+        if self.being_debugged == 0 && self.nt_global_flag != 0x70 {
+            false
+        } else {
+            true
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct WinProcessHeap {
@@ -79,6 +90,16 @@ impl Default for WinProcessHeap {
 
             flags: Default::default(),
             force_flags: Default::default(),
+        }
+    }
+}
+
+impl BeingDebug for WinProcessHeap {
+    fn is_being_debug(&self) -> bool {
+        if self.flags == 2 && self.force_flags == 0 {
+            false
+        } else {
+            true
         }
     }
 }
@@ -146,7 +167,7 @@ impl WinPeb {
     /// }
     /// ```
     pub fn peb_being_debugged() -> bool {
-        return !unsafe { IsDebuggerPresent().into() };
+        return unsafe { IsDebuggerPresent().into() };
     }
 
     /// 获取peb中指定属性的值来判断进程是否被调试
@@ -156,8 +177,8 @@ impl WinPeb {
     ///
     /// # 返回值
     ///
-    /// - `true`: 进程未被调试
-    /// - `false`：进程正在被调试
+    /// - `false`: 进程未被调试
+    /// - `true`：进程正在被调试
     ///
     /// # 示例
     ///
@@ -173,10 +194,7 @@ impl WinPeb {
 
         debug!("PEB.BeingDebugged ==> {:#x}", peb_ref.being_debugged);
 
-        match peb_ref.being_debugged {
-            0 => true,
-            _ => false,
-        }
+        peb_ref.is_being_debug()
     }
 
     /// 获取peb中指定属性的值来判断进程是否被调试
@@ -186,8 +204,8 @@ impl WinPeb {
     ///
     /// # 返回值
     ///
-    /// - `true`: 进程未被调试
-    /// - `false`：进程正在被调试
+    /// - `false`: 进程未被调试
+    /// - `true`：进程正在被调试
     ///
     /// # 示例
     ///
@@ -203,10 +221,7 @@ impl WinPeb {
 
         debug!("PEB.NtGlobalFlag ==> {:#x}", peb_ref.nt_global_flag);
 
-        match peb_ref.nt_global_flag {
-            0x70 => false,
-            _ => true,
-        }
+        peb_ref.is_being_debug()
     }
 
     /// 获取peb.processheap中的flags和force_flags的值来判断进程是否被调试
@@ -214,8 +229,8 @@ impl WinPeb {
     /// # 返回值
     ///
     /// - `Err`: PEB.ProcessHeap的值是null，这是不正常的
-    /// - `Ok(true)`: 进程未被调试
-    /// - `Ok(false)`：进程正在被调试
+    /// - `Ok(false)`: 进程未被调试
+    /// - `Ok(true)`：进程正在被调试
     ///
     /// # 示例
     ///
@@ -245,11 +260,7 @@ impl WinPeb {
             process_ref.flags, process_ref.force_flags
         );
 
-        if process_ref.flags > 2 || process_ref.force_flags != 0 {
-            Ok(false)
-        } else {
-            Ok(true)
-        }
+        Ok(process_ref.is_being_debug())
     }
 
     /// 通过检测ProcessHeap中属性值来判断进程是否被调试
@@ -260,8 +271,8 @@ impl WinPeb {
     /// # 返回值
     ///
     /// - `Err`: GetProcessHeap API调用异常
-    /// - `Ok(false)`: 进程被调试
-    /// - `Ok(true)`: 进程未被调试
+    /// - `Ok(true)`: 进程被调试
+    /// - `Ok(false)`: 进程未被调试
     ///
     /// # 注意事项
     ///
@@ -288,10 +299,6 @@ impl WinPeb {
             process_ref.flags, process_ref.force_flags
         );
 
-        if process_ref.flags > 2 || process_ref.force_flags != 0 {
-            Ok(false)
-        } else {
-            Ok(true)
-        }
+        Ok(process_ref.is_being_debug())
     }
 }

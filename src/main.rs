@@ -1,6 +1,7 @@
 use std::env::set_var;
 
 pub mod peb;
+pub mod util;
 pub mod breakpoint;
 #[cfg(test)]
 pub mod tests;
