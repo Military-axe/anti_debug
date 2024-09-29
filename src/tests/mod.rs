@@ -1,4 +1,4 @@
-use crate::peb::*;
+use crate::{breakpoint, peb::*};
 
 #[test]
 pub fn peb_being_debugged_test() {
@@ -29,4 +29,9 @@ pub fn peb_process_heap_test() {
         WinPeb::peb_process_heap().expect("GetProcessHeap error"),
         true
     );
+}
+
+#[test]
+pub fn hardware_breakpoint_test() {
+    assert_eq!(breakpoint::is_hardware_breakpoint_set().expect("GetThreadContext error"), false);
 }
