@@ -1,6 +1,7 @@
 use std::env::set_var;
 
 pub mod peb;
+pub mod breakpoint;
 #[cfg(test)]
 pub mod tests;
 
@@ -18,4 +19,5 @@ fn main() {
     let _ = peb::WinPeb::peb_nt_global_flag_asm();
     let _ = peb::WinPeb::peb_process_heap_asm();
     let _ = peb::WinPeb::peb_process_heap();
+    let _ = breakpoint::is_hardware_breakpoint_set();
 }
