@@ -3,6 +3,7 @@ use std::env::set_var;
 pub mod peb;
 pub mod util;
 pub mod breakpoint;
+pub mod exception;
 #[cfg(test)]
 pub mod tests;
 
