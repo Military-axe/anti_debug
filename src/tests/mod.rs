@@ -1,4 +1,4 @@
-use crate::{breakpoint, peb::*};
+use crate::{breakpoint, nt_query, peb::*};
 
 #[test]
 pub fn peb_being_debugged_test() {
@@ -33,5 +33,22 @@ pub fn peb_process_heap_test() {
 
 #[test]
 pub fn hardware_breakpoint_test() {
-    assert_eq!(breakpoint::is_hardware_breakpoint_set().expect("GetThreadContext error"), false);
+    assert_eq!(
+        breakpoint::is_hardware_breakpoint_set().expect("GetThreadContext error"),
+        false
+    );
+}
+
+#[test]
+pub fn check_remote_debugger_present_test() {
+    assert_eq!(
+        nt_query::DebugPort::check_remote_debugger_present()
+            .expect("CheckRemoteDebuggerPresent error"),
+        false
+    );
+}
+
+#[test]
+pub fn nt_query_debug_port_test() {
+    assert_eq!(nt_query::DebugPort::nt_query_debug_port(), false);
 }
