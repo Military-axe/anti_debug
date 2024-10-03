@@ -23,4 +23,6 @@ fn main() {
     let _ = peb::WinPeb::peb_process_heap_asm();
     let _ = peb::WinPeb::peb_process_heap();
     let _ = breakpoint::is_hardware_breakpoint_set();
+    let _ = nt_query::DebugPort::nt_query_debug_port();
+    let _ = nt_query::DebugObject::nt_query_debug_object();
 }
