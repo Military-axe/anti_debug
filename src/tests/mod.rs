@@ -1,4 +1,4 @@
-use crate::{breakpoint, nt_query, peb::*};
+use crate::{breakpoint, nt_query, peb::*, util::BeingDebug};
 
 #[test]
 pub fn peb_being_debugged_test() {
@@ -62,4 +62,10 @@ pub fn nt_query_debug_object_test() {
         nt_query::DebugObject::nt_query_debug_object().expect("NtQueryInformationProcess error"),
         false
     );
+}
+
+#[test]
+pub fn nt_query_debug_test() {
+    let anti = nt_query::NtQueryDebug {};
+    assert_eq!(anti.is_being_debug(), false)
 }
