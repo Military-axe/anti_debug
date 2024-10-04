@@ -7,7 +7,7 @@ use windows::{
         NtQueryInformationProcess, ProcessDebugObjectHandle, ProcessDebugPort,
     },
     Win32::{
-        Foundation::{GetLastError, BOOL, HANDLE, NTSTATUS, STATUS_SUCCESS},
+        Foundation::{GetLastError, BOOL, HANDLE, NTSTATUS, STATUS_PORT_NOT_SET, STATUS_SUCCESS},
         System::{Diagnostics::Debug::CheckRemoteDebuggerPresent, Threading::GetCurrentProcess},
     },
 };
@@ -117,17 +117,24 @@ impl BeingDebug for DebugObject {
 impl DebugObject {
     pub fn nt_query_debug_object() -> Result<bool> {
         let hprocess: HANDLE = unsafe { GetCurrentProcess() };
-        let mut debug_objetct_handle: u64 = Default::default();
+        let mut debug_objetct_handle: HANDLE = Default::default();
         let mut ret_length: u32 = Default::default();
         let status: NTSTATUS = unsafe {
             NtQueryInformationProcess(
                 hprocess,
                 ProcessDebugObjectHandle,
-                addr_of_mut!(debug_objetct_handle).cast(),
+                addr_of_mut!(debug_objetct_handle.0).cast(),
                 u32::try_from(size_of_val(&debug_objetct_handle)).expect("u32::try_from failed"),
                 &mut ret_length,
             )
         };
+
+        // NtQueryInformationProcess的processinformation值是ProcessDebugObjectHandle时
+        // 返回值为STATUS_PORT_NOT_SET表示进程未被调试
+        if status == STATUS_PORT_NOT_SET {
+            debug!("debug port not set");
+            return Ok(false)
+        }
 
         if status != STATUS_SUCCESS {
             unsafe {
@@ -144,9 +151,10 @@ impl DebugObject {
 
         debug!("debug_object_handle ==> {:?}", debug_objetct_handle);
 
-        match debug_objetct_handle {
-            0 => Ok(false),
-            _ => Ok(true),
-        }
+        // match debug_objetct_handle {
+        //     0 => Ok(false),
+        //     _ => Ok(true),
+        // }
+        Ok(!debug_objetct_handle.is_invalid())
     }
 }
