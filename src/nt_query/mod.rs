@@ -1,5 +1,5 @@
 use crate::util::BeingDebug;
-use anyhow::{Error, Result};
+use anyhow::Result;
 use log::{debug, warn};
 use std::{mem::size_of_val, ptr::addr_of_mut};
 use windows::{
@@ -39,6 +39,12 @@ pub fn check_remote_debugger_present() -> Result<bool> {
     Ok(debug_port.as_bool())
 }
 
+/// nt_query下的查询调试信息方法类型，
+/// 不同类型表示查询进程是否被调试的不同特征
+/// 
+/// - `DebugPort`: 调试器端口
+/// - `DebugObject`: 调试器对象句柄
+/// - `DebugFlags`: 调试器标志符
 #[derive(PartialEq, Clone, Debug)]
 pub enum QueryType {
     DebugPort = ProcessDebugPort.0 as isize,
@@ -64,7 +70,31 @@ impl BeingDebug for NtQueryDebug {
 }
 
 impl NtQueryDebug {
-    pub fn nt_query_core(hprocess: HANDLE, query_type: QueryType) -> Result<u64> {
+    /// 查询指定进程的相关调试信息
+    /// 
+    /// 传入进程句柄和需要查询的调试信息的方法类型(QueryType)
+    /// - `QueryType::DebugPort`，NtQueryInformationProcess返回值为0则没有被调试
+    /// - `QueryType::DebugObject`，NtQueryInformationProcess返回值为0则没有被调试
+    /// - `QueryType::DebugFlags`，NtQueryInformationProcess返回值为0则没有被调试
+    /// 
+    /// # 参数
+    /// 
+    /// - `hprocess`：进程句柄
+    /// - `query_type`：查询类型
+    ///
+    /// # 返回值
+    /// 
+    /// - `true`: 进程被调试
+    /// - `false`: 进程未被调试
+    /// 
+    /// # 示例
+    /// 
+    /// ```ignore
+    /// let hprocess = unsafe {GetCurrentProcess()};
+    /// let result = NtQueryDebug::nt_query_core(hprocess, QueryType::DebugObject).unwarp();
+    /// assert_eq!(result, 0);
+    /// ```
+    pub fn nt_query_core(hprocess: HANDLE, query_type: QueryType) -> bool {
         debug!("process handle ==> {:?}; query type ==> {:?}", hprocess, query_type);
         let mut ret_length: u32 = Default::default();
         let process_information_class = PROCESSINFOCLASS(query_type as i32);
@@ -79,47 +109,27 @@ impl NtQueryDebug {
             )
         };
 
-        if status == STATUS_PORT_NOT_SET
-            && process_information_class.0 == QueryType::DebugObject.into()
-        {
-            return Ok(process_information);
-        }
-
-        if status != STATUS_SUCCESS {
+        if status != STATUS_SUCCESS && status != STATUS_PORT_NOT_SET {
+            // 查询失败，则默认返回false
             warn!("NtQueryInformationProcess failed; error code: {:?}", status);
-            return Err(Error::msg("NtQueryInformationProcess failed"));
+            return false;
         }
 
-        Ok(process_information)
+        match process_information {
+            0 => false,
+            _ => true
+        }
     }
 
     pub fn check_debug_port(hprocess: HANDLE) -> bool {
-        match Self::nt_query_core(hprocess, QueryType::DebugPort) {
-            Err(_) => false,
-            Ok(x) => match x {
-                0 => false,
-                _ => true,
-            },
-        }
+        Self::nt_query_core(hprocess, QueryType::DebugPort)
     }
 
     pub fn check_debug_object(hprocess: HANDLE) -> bool {
-        match Self::nt_query_core(hprocess, QueryType::DebugObject) {
-            Err(_) => false,
-            Ok(x) => match x {
-                0 => false,
-                _ => true,
-            },
-        }
+        Self::nt_query_core(hprocess, QueryType::DebugObject)
     }
 
     pub fn check_debug_flags(hprocess: HANDLE) -> bool {
-        match Self::nt_query_core(hprocess, QueryType::DebugFlags) {
-            Err(_) => false,
-            Ok(x) => match x {
-                0 => false,
-                _ => true,
-            },
-        }
+        Self::nt_query_core(hprocess, QueryType::DebugFlags)
     }
 }
