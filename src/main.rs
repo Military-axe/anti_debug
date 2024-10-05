@@ -1,10 +1,13 @@
 use std::env::set_var;
 
+use log::debug;
+
 pub mod peb;
 pub mod util;
 pub mod breakpoint;
 pub mod exception;
 pub mod nt_query;
+pub mod thread;
 #[cfg(test)]
 pub mod tests;
 
@@ -23,4 +26,7 @@ fn main() {
     let _ = peb::WinPeb::peb_process_heap_asm();
     let _ = peb::WinPeb::peb_process_heap();
     let _ = breakpoint::is_hardware_breakpoint_set();
+    let _ = thread::disable_current_thread_debug();
+
+    debug!("Anti Debug End");
 }
