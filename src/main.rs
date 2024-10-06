@@ -27,7 +27,9 @@ fn main() {
     let _ = peb::WinPeb::peb_process_heap();
     let _ = breakpoint::is_hardware_breakpoint_set();
     let _ = thread::disable_current_thread_debug();
-    let _ = thread::HoneyThread::honey_thread_current_process();
+    let mut t = thread::HoneyThread::default();
+    t.set_honey_thread_current_process().unwrap();
+    t.check().unwrap();
 
     util::pause();
 

@@ -1,20 +1,20 @@
 use anyhow::{Error, Result};
 use log::{debug, warn};
-use std::{ffi::c_void, ptr::{null, null_mut}};
+use std::{
+    ffi::c_void,
+    ptr::{null, null_mut},
+};
 use windows::{
     Wdk::System::{
         SystemInformation::{NtQuerySystemInformation, SYSTEM_INFORMATION_CLASS},
         Threading::{ThreadHideFromDebugger, ZwSetInformationThread},
     },
     Win32::{
-        Foundation::{
-            HANDLE, NTSTATUS,
-            STATUS_INFO_LENGTH_MISMATCH, STATUS_SUCCESS,
-        },
+        Foundation::{CloseHandle, HANDLE, NTSTATUS, STATUS_INFO_LENGTH_MISMATCH, STATUS_SUCCESS},
         System::Threading::{
-            CreateThread, GetCurrentProcessId, GetCurrentThread,
-            SetThreadPriority, WaitForSingleObject, INFINITE, LPTHREAD_START_ROUTINE,
-            THREAD_CREATION_FLAGS, THREAD_PRIORITY_LOWEST,
+            CreateThread, GetCurrentProcessId, GetCurrentThread, SetThreadPriority,
+            WaitForSingleObject, INFINITE, LPTHREAD_START_ROUTINE, THREAD_CREATION_FLAGS,
+            THREAD_PRIORITY_LOWEST,
         },
     },
 };
@@ -67,10 +67,42 @@ pub struct SystemHandleInformation {
     pub handles: [SystemHandleTableEntryInfo; 1],
 }
 
-pub struct HoneyThread {}
 pub const SYSTEM_HANDLE_INFORMATION: SYSTEM_INFORMATION_CLASS = SYSTEM_INFORMATION_CLASS(16);
 
+/// 诱饵线程。当调试器调试进程的时候就会获取所有线程的句柄设置一个空白/特殊的诱饵线程。
+/// 通过检查系统句柄表，来判断诱饵进程是否被外部进程(调试器)打开句柄
+pub struct HoneyThread {
+    pub thread_handle: Option<HANDLE>,
+    pub thread_object: *mut c_void,
+    pub process_uid: u32,
+    pub thread_uid: u32,
+}
+
+impl Default for HoneyThread {
+    fn default() -> Self {
+        Self {
+            thread_handle: Default::default(),
+            thread_object: null_mut(),
+            process_uid: Default::default(),
+            thread_uid: Default::default(),
+        }
+    }
+}
+
+impl Drop for HoneyThread {
+    fn drop(&mut self) {
+        if self.thread_handle.is_some() {
+            let _ = unsafe { CloseHandle(self.thread_handle.unwrap()) };
+        }
+
+        self.thread_object = null_mut();
+        self.process_uid = 0;
+        self.thread_uid = 0;
+    }
+}
+
 impl HoneyThread {
+    /// 一个空的线程函数，线程会一直存活直到进程结束
     unsafe extern "system" fn thread_proc(argv: *mut c_void) -> u32 {
         let _ = argv;
         let hthread: HANDLE = unsafe { GetCurrentThread() };
@@ -79,10 +111,35 @@ impl HoneyThread {
         0
     }
 
+    /// 创建一个线程，线程函数需要满足LPTHREAD_START_ROUTINE类型
+    ///
+    /// # 参数
+    ///
+    /// - `func`: 线程运行函数，函数声明类型应该为Option<unsafe extern "system" fn(lpthreadparameter: *mut core::ffi::c_void) -> u32>
+    /// - `argv`: 函数所需要的参数
+    ///
+    /// # 返回值
+    ///
+    /// - 如果创建线程成功则返回Ok(())
+    /// - 如果创建线程失败则返回Err
+    ///
+    /// # 注意
+    ///
+    /// 这里的独立线程函数，最好保证线程能一只存活，直到进程结束。
+    /// 如果线程很快结束的话，可能导致查询系统句柄表时，
+    /// 线程已经结束而在判断是否线程被调试时无法正确判断
+    ///
+    /// # 示例
+    ///
+    /// ```ignore
+    /// let mut x = HoneyThread::default();
+    /// let _ = x.create_thread(HoneyThread::thread_proc, None);
+    /// ```
     pub fn create_thread(
+        &mut self,
         func: LPTHREAD_START_ROUTINE,
         argv: Option<*const c_void>,
-    ) -> Result<(HANDLE, u32)> {
+    ) -> Result<()> {
         let mut thread_id: u32 = Default::default();
         let hthread: HANDLE = unsafe {
             CreateThread(
@@ -97,13 +154,40 @@ impl HoneyThread {
 
         debug!("hthread ==> {:?}; thread_id ==> {:?}", hthread, thread_id);
 
-        Ok((hthread, thread_id))
+        self.thread_handle = Some(hthread);
+        self.thread_uid = thread_id;
+        Ok(())
     }
 
-    pub fn create_thread_empty_func() -> Result<(HANDLE, u32)> {
-        Self::create_thread(Some(Self::thread_proc), None)
+    /// 创建一个空白线程，线程能存活到进程结束
+    ///
+    /// # 返回值
+    ///
+    /// - 如果创建线程成功则返回Ok(())
+    /// - 如果创建线程失败则返回Err
+    ///
+    /// # 示例
+    ///
+    /// ```ignore
+    /// let mut x = HoneyThread::default();
+    /// let _ = x.create_thread_empty_func().except("create thread failed");
+    /// ```
+    pub fn create_thread_empty_func(&mut self) -> Result<()> {
+        self.create_thread(Some(Self::thread_proc), None)
     }
 
+    /// 查询系统句柄表内容
+    ///
+    /// # 返回值
+    ///
+    /// - 如果查询成功返回系统句柄表所有内容，以Vec<u8>的形式
+    /// - 如果查询失败则返回报错
+    ///
+    /// # 示例
+    ///
+    /// ```ignore
+    /// let data = HoneyThread::query_system_information().except("NtQuerySystemInformation failed");
+    /// ```
     pub fn query_system_information() -> Result<Vec<u8>> {
         let mut handle_info_size: usize = 0x10000;
         let mut handle_info_buffer: Vec<u8> = Vec::with_capacity(handle_info_size);
@@ -134,28 +218,87 @@ impl HoneyThread {
         Ok(handle_info_buffer)
     }
 
-    fn check(hthread: HANDLE, process_uid: u32) -> Result<bool> {
+    /// 设置空白诱饵线程在当前进程下
+    ///
+    /// # 返回值
+    ///
+    /// - 如果设置成功则返回Ok(())
+    /// - 如果设置失败则返回Err
+    ///
+    /// # 示例
+    ///
+    /// ```ignore
+    /// let mut x = HoneyThread::default();
+    /// let _ = x.set_honey_thread_current_process();
+    /// ```
+    pub fn set_honey_thread_current_process(&mut self) -> Result<()> {
+        self.create_thread_empty_func()?;
+        self.process_uid = unsafe { GetCurrentProcessId() };
+
+        debug!(
+            "hthread value ==> {:?}; process id ==> {}",
+            self.thread_handle, self.process_uid
+        );
+
+        Ok(())
+    }
+
+    /// 判断指定进程的句柄是否被其他进程获取
+    ///
+    /// - 通过遍历判断句柄值与进程号来找到对应句柄的内核地址值
+    /// - 通过对比内核地址值与进程号来判断，改句柄是否被其他进程打开
+    ///
+    /// # 返回值
+    ///
+    /// - `Ok(true)`: 句柄被其他进程获取
+    /// - `Ok(false)`: 句柄未被其他进程获取
+    /// - `Err`: 系统函数执行报错或者系统句柄表中未找到指定句柄内核地址
+    ///
+    /// # 注意
+    ///
+    /// 调用示例的check函数，需要已经初始化了self.thread_handle和self.process_uid值
+    /// 可以调用set_honey_thread_current_process来设置空白线程句柄与当前进程ID
+    ///
+    /// # 示例
+    ///
+    /// ```ignore
+    /// let mut x = HoneyThread::default();
+    /// let _ = x.set_honey_thread_current_process();
+    /// assert_eq!(x.check().unwarp(), false);
+    /// ```
+    pub fn check(&mut self) -> Result<bool> {
+        if self.thread_handle.is_none() || self.process_uid == 0 {
+            warn!(
+                "HoneyThread instance value error!; please set the process uid and thread handle"
+            );
+            return Err(Error::msg(
+                "HoneyThread instance value error!; please set the process uid and thread handle",
+            ));
+        }
+
+        // 获取系统句柄表信息
         let system_information: Vec<u8> = Self::query_system_information()?;
         let handle_info: *const SystemHandleInformation =
             system_information.as_ptr() as *const SystemHandleInformation;
         let handle_info_ref: &SystemHandleInformation = unsafe { &*handle_info };
         let handles_ptr: *const SystemHandleTableEntryInfo = handle_info_ref.handles.as_ptr();
 
-        let mut current_thread_obj: *mut c_void = null_mut();
+        if self.thread_object.is_null() {
+            // 获取当前线程内核对象地址
+            for i in 0..handle_info_ref.number_of_handles {
+                let handle: *const SystemHandleTableEntryInfo =
+                    unsafe { handles_ptr.add(i as usize) };
+                let uid: u32 = unsafe { (*handle).unique_process_id }.into();
+                let handle_val: usize = unsafe { (*handle).handle_value }.into();
 
-        // 获取当前线程内核对象地址
-        for i in 0..handle_info_ref.number_of_handles {
-            let handle: *const SystemHandleTableEntryInfo = unsafe { handles_ptr.add(i as usize) };
-            let uid: u32 = unsafe { (*handle).unique_process_id }.into();
-            let handle_val: usize = unsafe { (*handle).handle_value }.into();
-
-            if uid == process_uid && handle_val == hthread.0 as usize {
-                current_thread_obj = unsafe { (*handle).object };
-                debug!("Get current thread object ==> {:p}", current_thread_obj);
+                if uid == self.process_uid && handle_val == self.thread_handle.unwrap().0 as usize {
+                    self.thread_object = unsafe { (*handle).object };
+                    debug!("Get current thread object ==> {:p}", self.thread_object);
+                }
             }
         }
 
-        if current_thread_obj.is_null() {
+        if self.thread_object.is_null() {
             warn!("Could't found currnet thread object");
             return Err(Error::msg("Could't found currnet thread object"));
         }
@@ -165,26 +308,19 @@ impl HoneyThread {
             let handle: *const SystemHandleTableEntryInfo = unsafe { handles_ptr.add(i as usize) };
             let uid: u32 = unsafe { (*handle).unique_process_id }.into();
 
-            if uid == process_uid {
+            if uid == self.process_uid {
                 continue;
             }
 
-            let object_addr = unsafe {(*handle).object} as usize;
-            if current_thread_obj as usize == object_addr {
-                debug!("Found attack process is debug ==> {:?}", unsafe{&*handle});
-                return Ok(true)
+            let object_addr = unsafe { (*handle).object } as usize;
+            if self.thread_object as usize == object_addr {
+                debug!("Found attack process is debug ==> {:?}", unsafe {
+                    &*handle
+                });
+                return Ok(true);
             }
         }
 
         Ok(false)
-    }
-
-    pub fn honey_thread_current_process() -> Result<bool> {
-        let (hthread, _) = Self::create_thread_empty_func()?;
-        let process_uid = unsafe {GetCurrentProcessId()};
-        
-        debug!("hthread value ==> {:?}; process id ==> {}", hthread, process_uid);
-
-        Self::check(hthread, process_uid)
     }
 }

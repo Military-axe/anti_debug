@@ -47,9 +47,10 @@ pub fn nt_query_debug_test() {
 
 #[test]
 pub fn honey_thread_test() {
+    let mut t = thread::HoneyThread::default();
+    t.set_honey_thread_current_process().unwrap();
     assert_eq!(
-        thread::HoneyThread::honey_thread_current_process()
-            .expect("honey_thread_current_process error"),
+        t.check().unwrap(),
         false
     )
 }
