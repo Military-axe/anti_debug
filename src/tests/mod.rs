@@ -1,4 +1,4 @@
-use crate::{breakpoint, nt_query, peb::*, util::BeingDebug};
+use crate::{breakpoint, nt_query, peb::*, thread, util::BeingDebug};
 
 #[test]
 pub fn peb_being_debugged_test() {
@@ -43,4 +43,13 @@ pub fn hardware_breakpoint_test() {
 pub fn nt_query_debug_test() {
     let anti = nt_query::NtQueryDebug {};
     assert_eq!(anti.is_being_debug(), false)
+}
+
+#[test]
+pub fn honey_thread_test() {
+    assert_eq!(
+        thread::HoneyThread::honey_thread_current_process()
+            .expect("honey_thread_current_process error"),
+        false
+    )
 }
