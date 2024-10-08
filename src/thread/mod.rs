@@ -5,19 +5,51 @@ use std::{
     ptr::{null, null_mut},
 };
 use windows::{
-    Wdk::System::{
+    core::{s, w}, Wdk::System::{
         SystemInformation::{NtQuerySystemInformation, SYSTEM_INFORMATION_CLASS},
         Threading::{ThreadHideFromDebugger, ZwSetInformationThread},
-    },
-    Win32::{
+    }, Win32::{
         Foundation::{CloseHandle, HANDLE, NTSTATUS, STATUS_INFO_LENGTH_MISMATCH, STATUS_SUCCESS},
-        System::Threading::{
+        System::{LibraryLoader::{GetModuleHandleW, GetProcAddress}, Threading::{
             CreateThread, GetCurrentProcessId, GetCurrentThread, SetThreadPriority,
             WaitForSingleObject, INFINITE, LPTHREAD_START_ROUTINE, THREAD_CREATION_FLAGS,
             THREAD_PRIORITY_LOWEST,
-        },
-    },
+        }},
+    }
 };
+
+type NtCreateThreadExFunc = unsafe extern "system" fn(
+    *mut HANDLE,
+    ACCESS_MASK,
+    *mut OBJECT_ATTRIBUTES,
+    HANDLE,
+    *mut extern "system" fn(),
+    *mut std::ffi::c_void,
+    ULONG,
+    ULONG_PTR,
+    ULONG_PTR,
+    *mut CLIENT_ID,
+) -> NTSTATUS;
+
+pub struct DisableDebug{}
+
+impl DisableDebug {
+    pub fn create_thread(func: LPTHREAD_START_ROUTINE) -> Result<()> {
+        let ntdll = unsafe { GetModuleHandleW(w!("ntdll.dll")) }?;
+        let nt_create_thread_ex_warp = unsafe { GetProcAddress(ntdll, s!("NtCreateThreadEx")) };
+        if nt_create_thread_ex_warp.is_none() {
+            warn!("Get NtCreateThreadEx func address failed");
+            return Err(Error::msg("Get NtCreateThreadEx func address failed"));
+        }
+
+        let nt_create_thread_ex = unsafe {std::mem::transmute_copy(nt_create_thread_ex_warp.unwrap())};
+        unsafe { 
+            nt_create_thread_ex()
+        }
+
+        Ok(())
+    }
+}
 
 /// 禁止指定线程调试事件，如果已经在调试中，则会关闭调试
 ///
