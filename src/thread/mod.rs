@@ -5,49 +5,99 @@ use std::{
     ptr::{null, null_mut},
 };
 use windows::{
-    core::{s, w}, Wdk::System::{
+    core::{s, w},
+    Wdk::System::{
         SystemInformation::{NtQuerySystemInformation, SYSTEM_INFORMATION_CLASS},
         Threading::{ThreadHideFromDebugger, ZwSetInformationThread},
-    }, Win32::{
-        Foundation::{CloseHandle, HANDLE, NTSTATUS, STATUS_INFO_LENGTH_MISMATCH, STATUS_SUCCESS},
-        System::{LibraryLoader::{GetModuleHandleW, GetProcAddress}, Threading::{
-            CreateThread, GetCurrentProcessId, GetCurrentThread, SetThreadPriority,
-            WaitForSingleObject, INFINITE, LPTHREAD_START_ROUTINE, THREAD_CREATION_FLAGS,
-            THREAD_PRIORITY_LOWEST,
-        }},
-    }
+    },
+    Win32::{
+        Foundation::{
+            CloseHandle, BOOL, HANDLE, HMODULE, NTSTATUS, STATUS_INFO_LENGTH_MISMATCH,
+            STATUS_SUCCESS,
+        },
+        System::{
+            LibraryLoader::{GetModuleHandleW, GetProcAddress},
+            Threading::{
+                CreateThread, GetCurrentProcessId, GetCurrentThread, SetThreadPriority,
+                WaitForSingleObject, INFINITE, LPTHREAD_START_ROUTINE, THREAD_ALL_ACCESS,
+                THREAD_CREATION_FLAGS, THREAD_PRIORITY_LOWEST,
+            },
+        },
+    },
 };
 
-type NtCreateThreadExFunc = unsafe extern "system" fn(
-    *mut HANDLE,
-    ACCESS_MASK,
-    *mut OBJECT_ATTRIBUTES,
-    HANDLE,
-    *mut extern "system" fn(),
-    *mut std::ffi::c_void,
-    ULONG,
-    ULONG_PTR,
-    ULONG_PTR,
-    *mut CLIENT_ID,
+type NtCreateThreadEx = unsafe extern "system" fn(
+    *mut HANDLE,               // thread handle
+    u64,                       // desire access
+    *mut c_void,               // object attributes
+    HANDLE,                    // process handle
+    LPTHREAD_START_ROUTINE,    // start routine
+    *mut c_void,               // argument
+    u32,                       // create flags
+    usize,                     // zero bits
+    usize,                     // statck size
+    usize,                     // maximum stack size
+    *mut c_void,               // attribute list
 ) -> NTSTATUS;
 
-pub struct DisableDebug{}
+pub struct DisableDebug {}
 
 impl DisableDebug {
-    pub fn create_thread(func: LPTHREAD_START_ROUTINE) -> Result<()> {
-        let ntdll = unsafe { GetModuleHandleW(w!("ntdll.dll")) }?;
+    const THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER: u32 = 0x00000004;
+
+    /// 给指定进程创建一个THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER线程
+    /// 
+    /// 动态获取ntdll.dll中的NtCreateThreadEx函数
+    /// 
+    /// # 参数
+    /// 
+    /// - `hprocess`: 需要创建线程的进程句柄
+    /// - `func`: 线程执行函数
+    /// - `func_argv`: 线程执行函数参数
+    /// 
+    /// # 返回值
+    /// 
+    /// - 如果创建线程成功返回线程句柄
+    /// - 如果创建线程失败则返回Error
+    pub fn create_thread(
+        hprocess: HANDLE,
+        func: LPTHREAD_START_ROUTINE,
+        func_argv: Option<*mut c_void>,
+    ) -> Result<HANDLE> {
+        let ntdll: HMODULE = unsafe { GetModuleHandleW(w!("ntdll.dll")) }?;
         let nt_create_thread_ex_warp = unsafe { GetProcAddress(ntdll, s!("NtCreateThreadEx")) };
         if nt_create_thread_ex_warp.is_none() {
             warn!("Get NtCreateThreadEx func address failed");
             return Err(Error::msg("Get NtCreateThreadEx func address failed"));
         }
 
-        let nt_create_thread_ex = unsafe {std::mem::transmute_copy(nt_create_thread_ex_warp.unwrap())};
-        unsafe { 
-            nt_create_thread_ex()
+        let nt_create_thread_ex: NtCreateThreadEx =
+            unsafe { std::mem::transmute_copy(&nt_create_thread_ex_warp.unwrap()) };
+        let mut hthread: HANDLE = Default::default();
+        let status = unsafe {
+            nt_create_thread_ex(
+                &mut hthread,
+                THREAD_ALL_ACCESS.0.into(),
+                null_mut(),
+                hprocess,
+                func,
+                func_argv.unwrap_or(null_mut()),
+                DisableDebug::THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER,
+                0,
+                0,
+                0,
+                null_mut()
+            )
+        };
+
+        debug!("NtCreateThreadEx result ==> {:?}", status);
+
+        if hthread.is_invalid() {
+            warn!("NtCreateThreadEx failed");
+            return Err(Error::msg("NtCreateThreadEx failed"));
         }
 
-        Ok(())
+        Ok(hthread)
     }
 }
 
