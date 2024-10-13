@@ -12,7 +12,7 @@ use windows::{
     },
     Win32::{
         Foundation::{
-            CloseHandle, BOOL, HANDLE, HMODULE, NTSTATUS, STATUS_INFO_LENGTH_MISMATCH,
+            CloseHandle, HANDLE, HMODULE, NTSTATUS, STATUS_INFO_LENGTH_MISMATCH,
             STATUS_SUCCESS,
         },
         System::{
