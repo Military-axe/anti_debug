@@ -1,4 +1,4 @@
-use crate::{breakpoint, nt_query, peb::*, thread, util::BeingDebug};
+use anti_debug::{breakpoint, nt_query, peb::*, thread, util::BeingDebug};
 
 #[test]
 pub fn peb_being_debugged_test() {
