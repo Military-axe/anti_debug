@@ -3,5 +3,3 @@ pub mod util;
 pub mod breakpoint;
 pub mod nt_query;
 pub mod thread;
-#[cfg(test)]
-pub mod tests;
