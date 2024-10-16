@@ -1,4 +1,5 @@
 use anti_debug::{breakpoint, nt_query, peb::*, thread, util::BeingDebug};
+use windows::Win32::System::Threading::GetCurrentThread;
 
 #[test]
 pub fn peb_being_debugged_test() {
@@ -33,10 +34,13 @@ pub fn peb_process_heap_test() {
 
 #[test]
 pub fn hardware_breakpoint_test() {
+    let hthread = unsafe {GetCurrentThread()};
     assert_eq!(
-        breakpoint::is_hardware_breakpoint_set().expect("GetThreadContext error"),
+        breakpoint::HardwareBreakPoint::is_hardware_breakpoint_set(hthread).expect("GetThreadContext error"),
         false
     );
+
+    assert!(breakpoint::HardwareBreakPoint::clean_hardware_breakpoint(hthread).is_ok());
 }
 
 #[test]
